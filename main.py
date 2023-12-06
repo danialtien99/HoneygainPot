@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-import json, os
+import json
+import os
 import configparser
 from configparser import ConfigParser
 from getpass import getpass
@@ -7,39 +8,86 @@ import requests
 from requests import Response
 
 config_folder: str = 'Config'
-token_file: str = config_folder + '/HoneygainToken.json'
-config_path: str = config_folder + '/HoneygainConfig.toml'
+token_file: str = f'{config_folder}/HoneygainToken.json'
+config_path: str = f'{config_folder}/HoneygainConfig.toml'
 header: dict[str, str] = {'Authorization': ''}
 
-print('-------- Welcome to HoneygainPot --------')
+print('----------- Welcome to HoneygainPot -----------')
+print('Codename: Sandy')
 print('Made by GFx and MrLolf')
-if os.getenv('IsGit') == '1':
-   print('Powered by GitHub Actions V3 and Python')   
-print('-----------------------------------------')
+
+config: ConfigParser = ConfigParser()
+config.read(config_path)
+
+if os.getenv('GITHUB_ACTIONS') == 'true':
+    print('Powered by GitHub Actions V3 and Python')
+    print('Run with GitHub Actions: Yes')
+    print('Current repo:',os.getenv('GITHUB_REPOSITORY'))
+    user_repo = os.getenv('GITHUB_REPOSITORY')
+    original_repo = 'gorouflex/HoneygainPot'
+    user_url = f'https://api.github.com/repos/{user_repo}/commits/main'
+    original_url = f'https://api.github.com/repos/{original_repo}/commits/main'
+    user_response = requests.get(user_url)
+    original_response = requests.get(original_url)
+    if user_response.status_code == 200 and original_response.status_code == 200:
+        user_commit = user_response.json()['sha']
+        original_commit = original_response.json()['sha']
+        if user_commit == original_commit:
+            print('Your repo is up-to-date with the original repo')
+        else:
+            print('Your repo is not up-to-date with the original repo')
+            print('Please update your repo to the latest commit to get new updates and bug fixes')
+    else:
+        print("------------- Traceback log -------------\n❌ Error code 4: Failed to fetch commit information\nPlease refer to: https://github.com/gorouflex/HoneygainPot/blob/main/Docs/Debug.md for more information\nOr create an Issue on GitHub if it still doesn't work for you.")
+else:
+    print('Run with GitHub Actions: No')
+is_jwt = config.get('User', 'IsJWT', fallback='0')
+if is_jwt == '1':
+    print('Using JWT Token: Yes')
+    print('Using Mail and Pass: No')
+    os.environ['IsJWT'] = '1'
+elif os.getenv('IsJWT') == '1':
+    print('Using JWT Token: Yes')
+    print('Using Mail and Pass: No')
+else:
+    print('Using JWT Token status: No')
+    print('Using Mail and Pass: Yes')
+print('Config folder:', os.path.join(os.getcwd(), 'Config'))
+print('-----------------------------------------------')
 print('Starting HoneygainPot 🍯')
 
 def create_config() -> None:
     print('Collecting information from OS env 💻')
     cfg: ConfigParser = ConfigParser()
     cfg.add_section('User')
-    if os.getenv('IsGit') == '1':
-        try:
-          email: str = os.getenv('MAIL_JWD')
-          password: str = os.getenv('PASS_JWD')
-        except:
-          print("------ Traceback log ------\n❌ Error code 1: Cannot find 'MAIL_JWD' and 'PASS_JWD'.\nPlease refer to: https://github.com/gorouflex/HoneygainPot/blob/main/Debug.md for more information.\nOr create an Issue on GitHub if it still doesn't work for you.")
-          exit(-1)
+    if os.getenv('GITHUB_ACTIONS') == 'true':
+        if os.getenv('IsJWT') == '1':
+            token = os.getenv('JWT_TOKEN')
+            cfg.set('User', 'token', f"{token}")
+        else:
+            email = os.getenv('MAIL')
+            password = os.getenv('PASS')
+            cfg.set('User', 'email', f"{email}")
+            cfg.set('User', 'password', f"{password}")
     else:
-        try:
-          email: str = input("Email: ")
-          print("Password: ")
-          password: str = getpass()
-        except:
-          print("------ Traceback log ------\n❌ Error code 3: Cannot receive any input, make sure 'IsGit' = 1.\nPlease refer to: https://github.com/gorouflex/HoneygainPot/blob/main/Debug.md for more information.\nOr create an Issue on GitHub if it still doesn't work for you.")
-          exit(-1)
-            
-    cfg.set('User', 'email', f"{email}")
-    cfg.set('User', 'password', f"{password}")
+        print("### First time setup ###")
+        print("Please choose your main authentication method:")
+        print("1. Using Token")
+        print("2. Using Email and Password")
+
+        choice = input("Enter your choice (1 or 2): ")
+        if choice == '1':
+            token = input("Token: ")
+            cfg.set('User', 'token', f"{token}")
+            cfg.set('User', 'IsJWT', '1') 
+            os.environ['IsJWT'] = '1'
+        elif choice == '2':
+            email = input("Email: ")
+            password = getpass("Password: ")
+            cfg.set('User', 'email', f"{email}")
+            cfg.set('User', 'password', f"{password}")
+            cfg.set('User', 'IsJWT', '0') 
+
     cfg.add_section('Settings')
     cfg.set('Settings', 'Lucky Pot', 'True')
     cfg.set('Settings', 'Achievements', 'True')
@@ -69,8 +117,12 @@ def get_urls(cfg: ConfigParser) -> dict[str, str]:
 def get_login(cfg: ConfigParser) -> dict[str, str]:
     user: dict[str, str] = {}
     try:
-        user: dict[str, str] = {'email': cfg.get('User', 'email'),
-                                'password': cfg.get('User', 'password')}
+        if os.getenv('IsJWT') == '1':
+            token = cfg.get('User', 'token')
+            user: dict[str, str] = {'token': token}
+        else:
+            user: dict[str, str] = {'email': cfg.get('User', 'email'),
+                                    'password': cfg.get('User', 'password')}
     except configparser.NoOptionError or configparser.NoSectionError:
         create_config()
     return user
@@ -83,7 +135,6 @@ def get_settings(cfg: ConfigParser) -> dict[str, bool]:
     except configparser.NoOptionError or configparser.NoSectionError:
         create_config()
     return settings_dict
-
 
 if not os.path.exists(config_folder):
     os.mkdir(config_folder)
@@ -109,11 +160,13 @@ except configparser.NoOptionError or configparser.NoSectionError:
 
 def login(s: requests.session) -> json.loads:
     print('Logging in to Honeygain 🐝')
+    if os.getenv('IsJWT') == '1':
+        return {'data': {'access_token': payload['token']}}
     token: Response = s.post(urls['login'], json=payload)
     try:
         return json.loads(token.text)
     except json.decoder.JSONDecodeError:
-        print("------ Traceback log ------\n❌ Error code 10: You have exceeded your login tries.\nPlease wait a few hours or return tomorrow.")
+        print("------------- Traceback log -------------\n❌ Error code 3: You have exceeded your login tries\nPlease wait a few hours or return tomorrow\nPlease refer to: https://github.com/gorouflex/HoneygainPot/blob/main/Docs/Debug.md for more information\nOr create an Issue on GitHub if it still doesn't work for you")
         exit(-1)
 
 def gen_token(s: requests.session, invalid: bool = False) -> str | None:
@@ -123,7 +176,7 @@ def gen_token(s: requests.session, invalid: bool = False) -> str | None:
             f.seek(0)
             token: dict = login(s)
             if "title" in token:
-                print("------ Traceback log ------\n❌ Error code 4: Wrong login credentials,please enter the right ones.\nPlease refer to: https://github.com/gorouflex/HoneygainPot/blob/main/Debug.md for more information.\nOr create an Issue on GitHub if it still doesn't work for you.")
+                print("------------- Traceback log -------------\n❌ Error code 2: Wrong login credentials,please enter the right ones\nPlease refer to: https://github.com/gorouflex/HoneygainPot/blob/main/Docs/Debug.md for more information\nOr create an Issue on GitHub if it still doesn't work for you.")
                 return None
             json.dump(token, f)
     with open(token_file, 'r+') as f:
@@ -135,9 +188,9 @@ def achievements_claim(s: requests.session) -> bool:
     if settings['achievements_bool']:
         achievements: Response = s.get(urls['achievements'], headers=header)
         try:
-          achievements: dict = achievements.json()
+            achievements: dict = achievements.json()
         except:
-            print("------ Traceback log ------\n❌ Error code 2: You are not eligible to get the lucky pot because you do not reach 15mb of sharing bandwich everyday ( following to Honeygain's TOS ).\nPlease refer to: https://github.com/gorouflex/HoneygainPot/blob/main/Debug.md for more information.\nOr create an Issue on GitHub if it still doesn't work for you.")
+            print("------------- Traceback log -------------\n❌ Error code 1: You are not eligible to get the lucky pot because you do not reach 15mb of sharing bandwich everyday ( following to Honeygain's TOS )\nPlease refer to: https://github.com/gorouflex/HoneygainPot/blob/main/Docs/Debug.md for more information\nOr create an Issue on GitHub if it still doesn't work for you.")
             exit(-1)
         try:
             for achievement in achievements['data']:
@@ -150,7 +203,7 @@ def achievements_claim(s: requests.session) -> bool:
                 except IndexError:
                     if not achievement['is_claimed']:
                         s.post(urls['achievement_claim'], json={"user_achievement_id": achievement['id']},
-                        headers=header)
+                               headers=header)
                         print(f'Claimed {achievement["title"]} ✅')
         except KeyError:
             if 'message' in achievements:
@@ -172,7 +225,7 @@ def main() -> None:
         header = {'Authorization': f'Bearer {token}'}
         if not achievements_claim(s):
             print('Failed to claim achievements ❌')
-            print("------ Traceback log ------\n❌ Error code 2: You are not eligible to get the lucky pot because you do not reach 15mb of sharing bandwich everyday ( following to Honeygain's TOS ).\nPlease refer to: https://github.com/gorouflex/HoneygainPot/blob/main/Debug.md for more information.\nOr create an Issue on GitHub if it still doesn't work for you.")
+            print("------------- Traceback log -------------\n❌ Error code 1: You are not eligible to get the lucky pot because you do not reach 15mb of sharing bandwich everyday ( following to Honeygain's TOS )\nPlease refer to: https://github.com/gorouflex/HoneygainPot/blob/main/Docs/Debug.md for more information\nOr create an Issue on GitHub if it still doesn't work for you.")
             exit(-1)
         dashboard: Response = s.get(urls['balance'], headers=header)
         dashboard: dict = dashboard.json()
@@ -186,16 +239,20 @@ def main() -> None:
             pot_claim: Response = s.post(urls['pot'], headers=header)
             pot_claim: dict = pot_claim.json()
             try:
-              print(f'Claimed {pot_claim["data"]["credits"]} credits.')
+                print(f'Claimed {pot_claim["data"]["credits"]} credits.')
             except:
-              print("------ Traceback log ------\n❌ Error code 2: You are not eligible to get the lucky pot because you do not reach 15mb of sharing bandwich everyday ( following to Honeygain's TOS ).\nPlease refer to: https://github.com/gorouflex/HoneygainPot/blob/main/Debug.md for more information.\nOr create an Issue on GitHub if it still doesn't work for you.")
-              exit(-1)
+                print("------------- Traceback log -------------\n❌ Error code 1: You are not eligible to get the lucky pot because you do not reach 15mb of sharing bandwich everyday ( following to Honeygain's TOS )\nPlease refer to: https://github.com/gorouflex/HoneygainPot/blob/main/Docs/Debug.md for more information\nOr create an Issue on GitHub if it still doesn't work for you.")
+                exit(-1)
         pot_winning: Response = s.get(urls['pot'], headers=header)
         pot_winning: dict = pot_winning.json()
         print(f'Won today {pot_winning["data"]["winning_credits"]} credits ✅')
         balance: Response = s.get(urls['balance'], headers=header)
         balance: dict = balance.json()
-        print(f'You currently have {balance["data"]["payout"]["credits"]} credits 🍯')
+        try:
+          print(f'You currently have {balance["data"]["payout"]["credits"]} credits 🍯')
+        except:
+          print('Failed to gather information because some keys is missing')
+          exit(-1)
         print('Closing HoneygainPot ✅')
 
 if __name__ == '__main__':
